@@ -1,11 +1,20 @@
+import { FormProvider, useForm, UseFormReturn } from 'react-hook-form'
 import { composeStories } from '@storybook/react-vite'
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+
+import { BasicField } from 'formsg-shared/types'
 
 import { REQUIRED_ERROR } from '~constants/validation'
 
+import { CheckboxFieldSchema } from '../types'
+
+import { CheckboxField } from './CheckboxField'
 import * as stories from './CheckboxField.stories'
-import { CHECKBOX_OTHERS_INPUT_KEY } from './constants'
+import {
+  CHECKBOX_OTHERS_INPUT_KEY,
+  CHECKBOX_OTHERS_INPUT_VALUE,
+} from './constants'
 
 const { ValidationOptional, ValidationRequired, WithoutOthersOption } =
   composeStories(stories)
@@ -171,6 +180,80 @@ describe('radio validation', () => {
     expect(othersInput).toBeDisabled()
   })
 
+  it('renders the "Others" input as a single-line input when the field is enabled', () => {
+    // Arrange
+    setupCheckboxField(
+      { ...disabledOthersSchema, disabled: false },
+      {
+        [disabledOthersSchema._id]: {
+          value: [CHECKBOX_OTHERS_INPUT_VALUE],
+          othersInput: 'some answer',
+        },
+      },
+    )
+
+    // Assert
+    const control = screen.getByRole('textbox', { name: '"Other" response' })
+    expect(control.tagName).toBe('INPUT')
+  })
+
+  it('checks the "Others" option when typing into the "Others" input', async () => {
+    // Arrange
+    const user = userEvent.setup()
+    setupCheckboxField({ ...disabledOthersSchema, disabled: false })
+    const othersInput = screen.getByRole('textbox', {
+      name: '"Other" response',
+    })
+    const othersCheckbox = screen.getByRole('checkbox', { name: /other/i })
+    expect(othersCheckbox).not.toBeChecked()
+
+    // Act
+    await user.type(othersInput, 'a custom answer')
+
+    // Assert
+    expect(othersCheckbox).toBeChecked()
+  })
+
+  it('keeps the same "Others" input node across transient disabled states', async () => {
+    // Arrange
+    const user = userEvent.setup()
+    setupCheckboxField({ ...disabledOthersSchema, disabled: false })
+    const othersCheckbox = screen.getByRole('checkbox', { name: /other/i })
+    const altCheckbox = screen.getByRole('checkbox', { name: 'apple' })
+
+    // Act
+    // Check "Others" and type a custom answer.
+    await user.click(othersCheckbox)
+    const othersInput = screen.getByRole('textbox', {
+      name: '"Other" response',
+    })
+    await user.type(othersInput, 'My custom answer')
+    // Check a different option and uncheck "Others".
+    await user.click(altCheckbox)
+    await user.click(othersCheckbox)
+
+    // Assert
+    // "Others" input is greyed out but is the same DOM node.
+    const disabledInput = screen.getByRole('textbox', {
+      name: '"Other" response',
+    })
+    expect(disabledInput).toBeDisabled()
+    expect(disabledInput).toBe(othersInput)
+
+    // Act
+    // Re-check "Others".
+    await user.click(othersCheckbox)
+
+    // Assert
+    // Same input is enabled and retains its value. The focus-on-change in
+    // `OthersCheckbox` is a no-op while the input is still disabled, so click
+    // into the input to assert it is focusable again.
+    expect(othersInput).toBeEnabled()
+    expect(othersInput).toHaveValue('My custom answer')
+    await user.click(othersInput)
+    expect(othersInput).toHaveFocus()
+  })
+
   it('renders success when unchecking some options before submitting', async () => {
     // Arrange
     const user = userEvent.setup()
@@ -201,5 +284,81 @@ describe('radio validation', () => {
     expect(
       screen.queryByText(/Please specify a value for the "others" option/i),
     ).not.toBeInTheDocument()
+  })
+})
+
+const disabledOthersSchema: CheckboxFieldSchema = {
+  othersRadioButton: true,
+  validateByValue: false,
+  ValidationOptions: {
+    customMax: null,
+    customMin: null,
+  },
+  fieldOptions: ['apple', 'pear', 'orange', 'durian'],
+  title: 'Favourite fruit',
+  description: '',
+  required: false,
+  disabled: true,
+  fieldType: BasicField.Checkbox,
+  _id: '9051-disabled-checkbox-field',
+}
+
+const LONG_OTHERS_ANSWER = 'a very long prior-step answer '.repeat(25)
+
+const setupCheckboxField = (
+  schema: CheckboxFieldSchema,
+  defaultValues?: Record<string, unknown>,
+) => {
+  const formRef: { current: UseFormReturn | null } = { current: null }
+  const Wrapper = () => {
+    const formMethods = useForm({ defaultValues })
+    formRef.current = formMethods
+    return (
+      <FormProvider {...formMethods}>
+        <CheckboxField schema={schema} />
+      </FormProvider>
+    )
+  }
+  render(<Wrapper />)
+  return formRef
+}
+
+describe('disabled field with prior-step "Others" answer', () => {
+  it('renders the "Others" answer in a disabled textarea', () => {
+    // Arrange
+    setupCheckboxField(disabledOthersSchema, {
+      [disabledOthersSchema._id]: {
+        value: [CHECKBOX_OTHERS_INPUT_VALUE],
+        othersInput: LONG_OTHERS_ANSWER,
+      },
+    })
+
+    // Assert
+    const control = screen.getByRole('textbox', { name: '"Other" response' })
+    expect(control.tagName).toBe('TEXTAREA')
+    expect(control).toBeDisabled()
+    expect(control).toHaveValue(LONG_OTHERS_ANSWER)
+    expect(screen.getByRole('checkbox', { name: /other/i })).toBeChecked()
+  })
+
+  it('updates the textarea when the form is reset with a prior-step answer', async () => {
+    // Arrange
+    const formRef = setupCheckboxField(disabledOthersSchema)
+    const control = screen.getByRole('textbox', { name: '"Other" response' })
+    expect(control.tagName).toBe('TEXTAREA')
+
+    // Act
+    await act(async () => {
+      formRef.current?.reset({
+        [disabledOthersSchema._id]: {
+          value: [CHECKBOX_OTHERS_INPUT_VALUE],
+          othersInput: LONG_OTHERS_ANSWER,
+        },
+      })
+    })
+
+    // Assert
+    await waitFor(() => expect(control).toHaveValue(LONG_OTHERS_ANSWER))
+    expect(screen.getByRole('checkbox', { name: /other/i })).toBeChecked()
   })
 })

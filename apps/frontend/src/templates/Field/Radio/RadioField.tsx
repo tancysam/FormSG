@@ -11,6 +11,7 @@ import { useRadioValidationRules } from '~utils/fieldValidation'
 import { getFieldOptionsInSelectedLanguage } from '~utils/multiLanguage'
 import FormErrorMessage from '~components/FormControl/FormErrorMessage'
 import Radio, { OthersInput } from '~components/Radio'
+import Textarea from '~components/Textarea'
 
 import { BaseFieldProps, FieldContainer } from '../FieldContainer'
 import { RadioFieldInputs, RadioFieldSchema } from '../types'
@@ -143,11 +144,26 @@ export const RadioField = ({
                   isReadOnly={isValid && isSubmitting}
                   isInvalid={!!get(errors, othersInputName)}
                 >
-                  <OthersInput
-                    aria-label='"Other" response'
-                    {...register(othersInputName, othersValidationRules)}
-                    isHighContrast={isHighContrast}
-                  />
+                  {schema.disabled ? (
+                    // Use a textarea so long prior-step answers remain fully
+                    // readable; disabled single-line inputs cannot be scrolled.
+                    <Textarea
+                      minAutosizeRows={1}
+                      maxAutosizeRows={Infinity}
+                      isDisabled
+                      resize="none"
+                      sx={styles.othersInput}
+                      aria-label='"Other" response'
+                      {...(isHighContrast && { variant: 'highContrast' })}
+                      {...register(othersInputName, othersValidationRules)}
+                    />
+                  ) : (
+                    <OthersInput
+                      aria-label='"Other" response'
+                      {...register(othersInputName, othersValidationRules)}
+                      isHighContrast={isHighContrast}
+                    />
+                  )}
                   <FormErrorMessage
                     ml={styles.othersInput?.ml as string}
                     mb={0}

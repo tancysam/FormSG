@@ -17,6 +17,7 @@ import { getFieldOptionsInSelectedLanguage } from '~utils/multiLanguage'
 import Checkbox from '~components/Checkbox'
 import { CheckboxProps } from '~components/Checkbox/Checkbox'
 import FormErrorMessage from '~components/FormControl/FormErrorMessage'
+import Textarea from '~components/Textarea'
 
 import { BaseFieldProps, FieldContainer } from '../FieldContainer'
 import { CheckboxFieldInputs, CheckboxFieldSchema } from '../types'
@@ -152,21 +153,35 @@ export const CheckboxField = ({
                         trigger(othersInputName)
                       }}
                     />
-                    <Checkbox.OthersInput
-                      colorScheme={fieldColorScheme}
-                      aria-label='"Other" response'
-                      // Grey out the "Others" input when the user has selected
-                      // option(s) that do not include "Others", to make it clear
-                      // that text typed here will not be submitted.
-                      isDisabled={
-                        schema.disabled ||
-                        (Array.isArray(value) &&
+                    {schema.disabled ? (
+                      // Use a textarea so long prior-step answers remain fully
+                      // readable; disabled single-line inputs cannot be scrolled.
+                      <Textarea
+                        minAutosizeRows={1}
+                        maxAutosizeRows={Infinity}
+                        isDisabled
+                        resize="none"
+                        sx={styles.othersInput}
+                        aria-label='"Other" response'
+                        {...(isHighContrast && { variant: 'highContrast' })}
+                        {...register(othersInputName, othersValidationRules)}
+                      />
+                    ) : (
+                      <Checkbox.OthersInput
+                        colorScheme={fieldColorScheme}
+                        aria-label='"Other" response'
+                        // Grey out the "Others" input when the user has selected
+                        // option(s) that do not include "Others", to make it clear
+                        // that text typed here will not be submitted.
+                        isDisabled={
+                          Array.isArray(value) &&
                           value.length > 0 &&
-                          !value.includes(CHECKBOX_OTHERS_INPUT_VALUE))
-                      }
-                      {...register(othersInputName, othersValidationRules)}
-                      {...(isHighContrast && { variant: 'highContrast' })}
-                    />
+                          !value.includes(CHECKBOX_OTHERS_INPUT_VALUE)
+                        }
+                        {...register(othersInputName, othersValidationRules)}
+                        {...(isHighContrast && { variant: 'highContrast' })}
+                      />
+                    )}
                     <FormErrorMessage
                       ml={styles.othersInput?.ml as string}
                       mb={0}
