@@ -2,7 +2,14 @@ import { Meta, StoryFn } from '@storybook/react-vite'
 import { http, HttpResponse } from 'msw'
 import { expect, waitFor, within } from 'storybook/test'
 
+import { CLIENT_CHECKBOX_OTHERS_INPUT_VALUE } from 'formsg-shared/constants'
 import { FormResponseMode, WorkflowType } from 'formsg-shared/types'
+import {
+  BasicField,
+  CheckboxFieldBase,
+  FormFieldDto,
+  RadioFieldBase,
+} from 'formsg-shared/types/field'
 
 import { TABLE_FIELD_ADDITIONAL_ROWS_FIELD } from '~/mocks/msw/handlers/admin-form'
 import { envHandlers } from '~/mocks/msw/handlers/env'
@@ -18,7 +25,7 @@ import {
   _getFromIndexedDBForTest,
   _removeFromIndexedDBForTest,
 } from '~hooks/useIndexedDb'
-import { StoryRouter } from '~utils/storybook'
+import { getMobileViewParameters, StoryRouter } from '~utils/storybook'
 
 import { SAVE_DRAFT_INDEXEDDB_STORE_NAME } from '~features/form/constants'
 
@@ -378,3 +385,184 @@ WithStoppedWorkflow.play = async ({ canvasElement }) => {
     ).toBeInTheDocument(),
   )
 }
+
+const RADIO_OTHERS_FIELD: FormFieldDto<RadioFieldBase> = {
+  title: 'Radio with Others for test',
+  description: 'Long Others answer should be fully readable',
+  required: true,
+  disabled: false,
+  fieldType: BasicField.Radio,
+  _id: 'radio-others-field-id',
+  globalId: 'not-used',
+  othersRadioButton: true,
+  fieldOptions: ['alpha', 'beta', 'gamma'],
+}
+
+const CHECKBOX_OTHERS_FIELD: FormFieldDto<CheckboxFieldBase> = {
+  title: 'Checkbox with Others for test',
+  description: 'Long Others answer should be fully readable',
+  required: true,
+  disabled: false,
+  fieldType: BasicField.Checkbox,
+  _id: 'checkbox-others-field-id',
+  globalId: 'not-used',
+  othersRadioButton: true,
+  validateByValue: false,
+  ValidationOptions: {
+    customMax: null,
+    customMin: null,
+  },
+  fieldOptions: ['alpha', 'beta', 'gamma'],
+}
+
+// A long multi-paragraph answer well beyond 12 rows of text.
+const LONG_RADIO_OTHERS_ANSWER = [
+  'This is a very long answer given by the respondent in the previous step of the form. It is intentionally long so that it far exceeds the height of a single-line input and requires multiple rows to display.',
+  'The second paragraph continues the answer with even more detail, ensuring that the rendered control must grow well past twelve rows before the entire response is visible without scrolling.',
+  'A final short paragraph wraps things up.',
+].join('\n\n')
+
+// A long unbroken token with no whitespace.
+const LONG_CHECKBOX_OTHERS_ANSWER = 'a'.repeat(300)
+
+const PREVIOUS_SUBMISSION_OTHERS_ANSWERS = JSON.stringify({
+  'radio-others-field-id': {
+    fieldType: 'radiobutton',
+    answer: { value: LONG_RADIO_OTHERS_ANSWER, isOthersInput: true },
+    question: 'Radio with Others for test',
+    provenance: {},
+  },
+  'checkbox-others-field-id': {
+    fieldType: 'checkbox',
+    answer: {
+      value: [CLIENT_CHECKBOX_OTHERS_INPUT_VALUE],
+      othersInput: LONG_CHECKBOX_OTHERS_ANSWER,
+    },
+    question: 'Checkbox with Others for test',
+    provenance: {},
+  },
+})
+
+const MRF_STEP_2_NON_EDITABLE_OTHERS_FIELDS_MSW = [
+  getPublicFormResponse({
+    overrides: {
+      form: {
+        responseMode: FormResponseMode.Multirespondent,
+        workflow: [],
+      },
+    },
+  }),
+  getEncryptedSubmissionResponse({
+    overrides: {
+      workflow: [
+        {
+          _id: 'step-0',
+          edit: [RADIO_OTHERS_FIELD._id, CHECKBOX_OTHERS_FIELD._id],
+          workflow_type: WorkflowType.Static,
+        },
+        {
+          _id: 'step-1',
+          edit: [],
+          workflow_type: WorkflowType.Static,
+        },
+      ],
+      form_fields: [RADIO_OTHERS_FIELD, CHECKBOX_OTHERS_FIELD],
+      encryptedContent: PREVIOUS_SUBMISSION_OTHERS_ANSWERS,
+    },
+  }),
+  ...DEFAULT_MSW_HANDLERS,
+]
+
+const getOthersTextareaWithValue = async (
+  canvas: ReturnType<typeof within>,
+  expectedValue: string,
+) => {
+  let match: HTMLTextAreaElement | undefined
+  await waitFor(() => {
+    const textareas = canvas.getAllByRole('textbox', {
+      name: '"Other" response',
+    }) as HTMLTextAreaElement[]
+    match = textareas.find((t) => t.value === expectedValue)
+    expect(match).toBeTruthy()
+  })
+  return match as HTMLTextAreaElement
+}
+
+const waitForStableHeight = async (el: HTMLElement) => {
+  await waitFor(async () => {
+    const first = el.clientHeight
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    expect(el.clientHeight).toBe(first)
+  })
+}
+
+const playDisabledOthersFields: StoryFn['play'] = async ({
+  canvasElement,
+  step,
+}) => {
+  const canvas = within(canvasElement)
+
+  let radioTextarea: HTMLTextAreaElement | undefined
+  let checkboxTextarea: HTMLTextAreaElement | undefined
+  await step(
+    'Wait for both "Others" textareas to show the prior-step answers',
+    async () => {
+      radioTextarea = await getOthersTextareaWithValue(
+        canvas,
+        LONG_RADIO_OTHERS_ANSWER,
+      )
+      checkboxTextarea = await getOthersTextareaWithValue(
+        canvas,
+        LONG_CHECKBOX_OTHERS_ANSWER,
+      )
+    },
+  )
+  if (!radioTextarea || !checkboxTextarea) {
+    throw new Error('"Others" textareas not found')
+  }
+  const textareas: HTMLTextAreaElement[] = [radioTextarea, checkboxTextarea]
+
+  await step('Both "Others" textareas are visible and have size', async () => {
+    for (const textarea of textareas) {
+      expect(textarea).toBeVisible()
+      expect(textarea.clientWidth).toBeGreaterThan(0)
+      expect(textarea.clientHeight).toBeGreaterThan(0)
+    }
+  })
+
+  await step('Autosize has settled with no clipped content', async () => {
+    for (const textarea of textareas) {
+      await waitForStableHeight(textarea)
+      expect(textarea.scrollHeight).toBeLessThanOrEqual(
+        textarea.clientHeight + 1,
+      )
+      expect(textarea.scrollWidth).toBeLessThanOrEqual(textarea.clientWidth + 1)
+    }
+  })
+
+  await step('The "Others" options are checked and disabled', async () => {
+    const othersRadio = canvas.getByRole('radio', { name: 'Others' })
+    expect(othersRadio).toBeChecked()
+    expect(othersRadio).toBeDisabled()
+    const othersCheckbox = canvas.getByRole('checkbox', { name: 'Others' })
+    expect(othersCheckbox).toBeChecked()
+    expect(othersCheckbox).toBeDisabled()
+  })
+}
+
+export const WithMultiRespondentFormStep2NonEditableOthersFields =
+  Template.bind({})
+WithMultiRespondentFormStep2NonEditableOthersFields.parameters = {
+  msw: MRF_STEP_2_NON_EDITABLE_OTHERS_FIELDS_MSW,
+}
+WithMultiRespondentFormStep2NonEditableOthersFields.play =
+  playDisabledOthersFields
+
+export const WithMultiRespondentFormStep2NonEditableOthersFieldsMobile =
+  Template.bind({})
+WithMultiRespondentFormStep2NonEditableOthersFieldsMobile.parameters = {
+  msw: MRF_STEP_2_NON_EDITABLE_OTHERS_FIELDS_MSW,
+  ...getMobileViewParameters(),
+}
+WithMultiRespondentFormStep2NonEditableOthersFieldsMobile.play =
+  playDisabledOthersFields
